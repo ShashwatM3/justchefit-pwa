@@ -6,6 +6,8 @@ import {
   setPersistence,
   browserLocalPersistence,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   GoogleAuthProvider
 } from "firebase/auth";
 import { doc, getDoc, setDoc } from 'firebase/firestore';
@@ -71,10 +73,37 @@ function SharedContentWrapper() {
 function HomeContent() {
   const auth = getAuth(app);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  
   const [loading, setLoading] = useState(true);
   const [authInitialized, setAuthInitialized] = useState(false);
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [signingIn, setSigningIn] = useState(false);
+  const [autoSignInAttempted, setAutoSignInAttempted] = useState(false);
+
+  // Check if there's shared content
+  const hasSharedContent = Boolean(
+    searchParams.get('title') || 
+    searchParams.get('text') || 
+    searchParams.get('url')
+  );
+
+  // Handle redirect result on component mount
+  useEffect(() => {
+    const handleRedirectResult = async () => {
+      try {
+        const result = await getRedirectResult(auth);
+        if (result) {
+          console.log("Redirect sign-in successful:", result.user);
+          // User data will be set by onAuthStateChanged
+        }
+      } catch (error) {
+        console.error("Redirect sign-in error:", error);
+      }
+    };
+
+    handleRedirectResult();
+  }, [auth]);
 
   // Listen for auth state changes
   useEffect(() => {
@@ -99,6 +128,18 @@ function HomeContent() {
             await setDoc(userRef, newUser, { merge: true });
             setUserInfo(newUser);
           }
+
+          // Log shared content when user is authenticated
+          if (hasSharedContent) {
+            console.log("User authenticated with shared content:", {
+              user: user.email,
+              sharedContent: {
+                title: searchParams.get('title'),
+                text: searchParams.get('text'),
+                url: searchParams.get('url')
+              }
+            });
+          }
         } catch (error) {
           console.error("Error fetching user data:", error);
           setUserInfo(null);
@@ -111,21 +152,59 @@ function HomeContent() {
     });
 
     return () => unsubscribe();
-  }, [auth]);
+  }, [auth, hasSharedContent, searchParams]);
+
+  // Auto-trigger sign-in if user has shared content but is not authenticated
+  useEffect(() => {
+    if (
+      authInitialized && 
+      !loading && 
+      !userInfo && 
+      hasSharedContent && 
+      !autoSignInAttempted &&
+      !signingIn
+    ) {
+      console.log("Shared content detected without authentication. Triggering auto sign-in...");
+      setAutoSignInAttempted(true);
+      handleSignIn(true); // Pass true to indicate auto sign-in
+    }
+  }, [authInitialized, loading, userInfo, hasSharedContent, autoSignInAttempted, signingIn]);
 
   // Sign in with Google handler
-  const handleSignIn = async () => {
+  const handleSignIn = async (isAutoTriggered = false) => {
     setSigningIn(true);
     try {
       await setPersistence(auth, browserLocalPersistence);
       const provider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, provider);
-      const user = result.user;
       
-      console.log("Sign-in successful:", user);
-    } catch (error) {
+      // Try popup first, fall back to redirect if it fails
+      try {
+        const result = await signInWithPopup(auth, provider);
+        console.log("Popup sign-in successful:", result.user);
+      } catch (popupError: any) {
+        console.log("Popup failed, trying redirect...", popupError);
+        
+        // If popup was blocked or failed, use redirect
+        if (
+          popupError.code === 'auth/popup-blocked' ||
+          popupError.code === 'auth/popup-closed-by-user' ||
+          popupError.code === 'auth/cancelled-popup-request'
+        ) {
+          console.log("Using redirect method instead...");
+          await signInWithRedirect(auth, provider);
+          // Don't set signingIn to false here, as redirect will reload the page
+          return;
+        } else {
+          throw popupError;
+        }
+      }
+    } catch (error: any) {
       console.error("Sign-in error:", error);
-      alert("Failed to sign in. Please try again.");
+      
+      // Only show alert if it wasn't an auto-triggered sign-in
+      if (!isAutoTriggered) {
+        alert("Failed to sign in. Please try again.");
+      }
     } finally {
       setSigningIn(false);
     }
@@ -134,69 +213,100 @@ function HomeContent() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-50 font-sans dark:bg-black">
       <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Suspense
-          fallback={
-            <div className="w-full max-w-3xl mx-auto mb-8 p-4 text-center text-gray-500">
-              Loading shared content...
+        
+        {/* Show loading state while checking auth */}
+        {!authInitialized || loading ? (
+          <div className="w-full flex items-center justify-center py-12">
+            <div className="flex flex-col items-center gap-4">
+              <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+              <p className="text-gray-600 dark:text-gray-400">
+                {signingIn ? "Signing you in..." : "Loading..."}
+              </p>
             </div>
-          }
-        >
-          <SharedContentWrapper />
-        </Suspense>
-
-        {/* Authentication Section */}
-        {authInitialized && (
-          <div className="w-full mb-8 flex justify-center">
-            {loading ? (
-              <div className="flex items-center gap-2 text-gray-500">
-                <Loader2 className="w-5 h-5 animate-spin" />
-                <span>Checking authentication...</span>
-              </div>
-            ) : userInfo ? (
-              <AddRecipeButton />
-            ) : (
-              <button
-                onClick={handleSignIn}
-                disabled={signingIn}
-                className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold rounded-lg transition-colors shadow-md hover:shadow-lg disabled:cursor-not-allowed"
-              >
-                {signingIn ? (
-                  <>
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    Signing in...
-                  </>
-                ) : (
-                  <>
-                    <LogIn className="w-5 h-5" />
-                    Sign in with Google
-                  </>
-                )}
-              </button>
-            )}
           </div>
+        ) : (
+          <>
+            {/* Only show shared content if user is authenticated */}
+            {userInfo && hasSharedContent && (
+              <Suspense
+                fallback={
+                  <div className="w-full max-w-3xl mx-auto mb-8 p-4 text-center text-gray-500">
+                    Loading shared content...
+                  </div>
+                }
+              >
+                <SharedContentWrapper />
+              </Suspense>
+            )}
+
+            {/* Authentication Section */}
+            {authInitialized && (
+              <div className="w-full mb-8 flex justify-center">
+                {userInfo ? (
+                  hasSharedContent ? (
+                    <AddRecipeButton />
+                  ) : (
+                    <div className="text-center">
+                      <p className="text-gray-600 dark:text-gray-400 mb-4">
+                        Welcome back! Share content to get started.
+                      </p>
+                    </div>
+                  )
+                ) : (
+                  <div className="flex flex-col items-center gap-4">
+                    {hasSharedContent && (
+                      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-4 text-center">
+                        <p className="text-sm text-blue-800 dark:text-blue-200">
+                          🔗 Shared content detected! Please sign in to continue.
+                        </p>
+                      </div>
+                    )}
+                    <button
+                      onClick={() => handleSignIn(false)}
+                      disabled={signingIn}
+                      className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold rounded-lg transition-colors shadow-md hover:shadow-lg disabled:cursor-not-allowed"
+                    >
+                      {signingIn ? (
+                        <>
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                          Signing in...
+                        </>
+                      ) : (
+                        <>
+                          <LogIn className="w-5 h-5" />
+                          Sign in with Google
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* App Description */}
+            <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left w-full">
+              <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
+                JustChefIt PWA
+              </h1>
+              <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
+                A Progressive Web App that can receive shared content from other
+                apps. Install this app to use it as a share target for URLs and
+                content from social media apps like Instagram.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-4 text-base font-medium sm:flex-row w-full sm:w-auto">
+              <a
+                className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
+                href="https://nextjs.org/docs"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Documentation
+              </a>
+            </div>
+          </>
         )}
-
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left w-full">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            JustChefIt PWA
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            A Progressive Web App that can receive shared content from other
-            apps. Install this app to use it as a share target for URLs and
-            content from social media apps like Instagram.
-          </p>
-        </div>
-
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row w-full sm:w-auto">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://nextjs.org/docs"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
       </main>
     </div>
   );
