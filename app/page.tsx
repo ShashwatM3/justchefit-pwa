@@ -14,7 +14,7 @@ import { app, db } from "@/lib/firebase";
 // import { useCounterStore } from './store'
 
 // Mock SharedContent component - replace with your actual import
-function SharedContent({ title, text, url }) {
+function SharedContent({ title, text, url }: { title: string; text: string; url: string }) {
   return (
     <div className="w-full max-w-3xl mx-auto mb-8 p-6 bg-gray-50 dark:bg-gray-900 rounded-lg">
       {title && (
@@ -41,9 +41,9 @@ function SharedContent({ title, text, url }) {
   );
 }
 
-function SharedContentWrapper({ searchParamsPromise }) {
+function SharedContentWrapper({ searchParamsPromise }: { searchParamsPromise: any }) {
   // Unwrap the Promise using React.use()
-  const searchParams = use(searchParamsPromise);
+  const searchParams: any = use(searchParamsPromise);
   
   return (
     <SharedContent
@@ -54,7 +54,7 @@ function SharedContentWrapper({ searchParamsPromise }) {
   );
 }
 
-export default function Home({ searchParams }) {
+export default function Home({ searchParams }: { searchParams: any }) {
   const [userInfo, setUserInfo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [authInitialized, setAuthInitialized] = useState(false);
@@ -67,7 +67,7 @@ export default function Home({ searchParams }) {
     // Mock auth for demonstration - remove this in production
     const mockAuth = {
       currentUser: null,
-      onAuthStateChanged: (callback) => {
+      onAuthStateChanged: (callback: any) => {
         // Simulate checking auth state
         setTimeout(() => {
           callback(null); // No user logged in
@@ -79,7 +79,7 @@ export default function Home({ searchParams }) {
     setLoading(true);
     
     // Replace mockAuth with 'auth' in production
-    const unsubscribe = mockAuth.onAuthStateChanged(async (user) => {
+    const unsubscribe = mockAuth.onAuthStateChanged(async (user: any) => {
       if (user) {
         try {
           // Fetch user details from Firestore
@@ -88,7 +88,7 @@ export default function Home({ searchParams }) {
           // const userSnap = await getDoc(userRef);
           
           // Mock user data - remove in production
-          const mockUserData = {
+          const mockUserData: any = {
             name: user.displayName,
             email: user.email,
             profile_pic: user.photoURL,
