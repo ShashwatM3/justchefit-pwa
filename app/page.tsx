@@ -1,5 +1,5 @@
 'use client'
-import { Suspense, useState, useEffect, use } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { 
   getAuth, 
   onAuthStateChanged,
@@ -11,62 +11,69 @@ import {
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { Plus, Loader2, LogIn } from 'lucide-react';
 import { app, db } from "@/lib/firebase";
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import SharedContent from "./components/SharedContent";
 
-interface SearchParams {
-  title?: string;
-  text?: string;
-  url?: string;
+interface UserInfo {
+  name: string | null;
+  email: string | null;
+  profile_pic: string | null;
+  uid: string;
 }
 
-interface PageProps {
-  searchParams: Promise<SearchParams>;
+function AddRecipeButton() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  
+  const title = searchParams.get('title') || '';
+  const text = searchParams.get('text') || '';
+  const url = searchParams.get('url') || '';
+  
+  const handleAddRecipe = () => {
+    const params = new URLSearchParams();
+    if (title) params.set('title', title);
+    if (text) params.set('text', text);
+    if (url) params.set('url', url);
+    router.push(`/Dashboard?${params.toString()}`);
+  };
+
+  const hasSharedContent = title || text || url;
+  
+  return hasSharedContent ? (
+    <div className="flex items-center gap-2">
+      <button
+        onClick={handleAddRecipe}
+        className="flex items-center gap-2 px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition-colors shadow-md hover:shadow-lg"
+      >
+        <Plus className="w-5 h-5" />
+        Add Recipe
+      </button>
+    </div>
+  ) : (
+    <div className="flex items-center gap-2 text-gray-500">
+      <span>No shared content</span>
+    </div>
+  );
 }
 
-function SharedContentWrapper({ searchParamsPromise }: { searchParamsPromise: Promise<SearchParams> }) {
-  const searchParams = use(searchParamsPromise);
+function SharedContentWrapper() {
+  const searchParams = useSearchParams();
   
   return (
     <SharedContent
-      title={searchParams?.title}
-      text={searchParams?.text}
-      url={searchParams?.url}
+      title={searchParams.get('title') || undefined}
+      text={searchParams.get('text') || undefined}
+      url={searchParams.get('url') || undefined}
     />
   );
 }
 
-function AddRecipeButton({ searchParamsPromise }: { searchParamsPromise: Promise<SearchParams> }) {
-  const searchParams = use(searchParamsPromise);
-  const router = useRouter();
-  const handleAddRecipe = (searchParams: SearchParams) => {
-    router.push(`/Dashboard?title=${searchParams?.title}&text=${searchParams?.text}&url=${searchParams?.url}`);
-  };
-  return (
-    searchParams && Object.keys(searchParams).length > 0 ? (
-      <div className="flex items-center gap-2">
-        <button
-          onClick={() => handleAddRecipe(searchParams)}
-          className="flex items-center gap-2 px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition-colors shadow-md hover:shadow-lg"
-        >
-          <Plus className="w-5 h-5" />
-          Add Recipe
-        </button>
-      </div>
-    ) : (
-      <div className="flex items-center gap-2 text-gray-500">
-        <span>No shared content</span>
-      </div>
-    )
-  )
-}
-
-export default function Home({ searchParams }: PageProps) {
+function HomeContent() {
   const auth = getAuth(app);
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [authInitialized, setAuthInitialized] = useState(false);
-  const [userInfo, setUserInfo] = useState<{} | null>(null);
+  const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [signingIn, setSigningIn] = useState(false);
 
   // Listen for auth state changes
@@ -80,10 +87,10 @@ export default function Home({ searchParams }: PageProps) {
           const userSnap = await getDoc(userRef);
 
           if (userSnap.exists()) {
-            setUserInfo(userSnap.data());
+            setUserInfo(userSnap.data() as UserInfo);
           } else {
             // If user doc doesn't exist yet, create it
-            const newUser = {
+            const newUser: UserInfo = {
               name: user.displayName,
               email: user.email,
               profile_pic: user.photoURL,
@@ -104,7 +111,7 @@ export default function Home({ searchParams }: PageProps) {
     });
 
     return () => unsubscribe();
-  }, [auth, setUserInfo]);
+  }, [auth]);
 
   // Sign in with Google handler
   const handleSignIn = async () => {
@@ -115,7 +122,6 @@ export default function Home({ searchParams }: PageProps) {
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
       
-      // User details will sync via onAuthStateChanged
       console.log("Sign-in successful:", user);
     } catch (error) {
       console.error("Sign-in error:", error);
@@ -123,10 +129,6 @@ export default function Home({ searchParams }: PageProps) {
     } finally {
       setSigningIn(false);
     }
-  };
-
-  const handleAddRecipe = () => {
-    router.push("/Dashboard");
   };
 
   return (
@@ -139,7 +141,7 @@ export default function Home({ searchParams }: PageProps) {
             </div>
           }
         >
-          <SharedContentWrapper searchParamsPromise={searchParams} />
+          <SharedContentWrapper />
         </Suspense>
 
         {/* Authentication Section */}
@@ -151,7 +153,7 @@ export default function Home({ searchParams }: PageProps) {
                 <span>Checking authentication...</span>
               </div>
             ) : userInfo ? (
-              <AddRecipeButton searchParamsPromise={searchParams} />
+              <AddRecipeButton />
             ) : (
               <button
                 onClick={handleSignIn}
@@ -197,5 +199,17 @@ export default function Home({ searchParams }: PageProps) {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={
+      <div className="flex min-h-screen items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin" />
+      </div>
+    }>
+      <HomeContent />
+    </Suspense>
   );
 }
