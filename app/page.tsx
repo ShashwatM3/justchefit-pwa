@@ -8,7 +8,8 @@ import {
   signInWithPopup,
   signInWithRedirect,
   getRedirectResult,
-  GoogleAuthProvider
+  GoogleAuthProvider,
+  signOut
 } from "firebase/auth";
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { Plus, Loader2, LogIn } from 'lucide-react';
@@ -243,15 +244,25 @@ function HomeContent() {
             {authInitialized && (
               <div className="w-full mb-8 flex justify-center">
                 {userInfo ? (
-                  hasSharedContent ? (
-                    <AddRecipeButton />
-                  ) : (
-                    <div className="text-center">
-                      <p className="text-gray-600 dark:text-gray-400 mb-4">
-                        Welcome back! Share content to get started.
-                      </p>
-                    </div>
-                  )
+                  <div className="flex items-center justify-between w-full">
+                    {hasSharedContent ? (
+                      <AddRecipeButton />
+                    ) : (
+                      <div className="text-center">
+                        <p className="text-gray-600 dark:text-gray-400 mb-4">
+                          Welcome back! Share content to get started.
+                        </p>
+                      </div>
+                    )}
+                    <button onClick={() => {
+                      signOut(auth).then(() => {
+                        alert("Sign out successful");
+                        window.location.reload();
+                      }).catch((error) => {
+                        alert("Sign out UNSUCCESSFUL!")
+                      });
+                    }}>Sign out</button>
+                  </div>
                 ) : (
                   <div className="flex flex-col items-center gap-4">
                     {hasSharedContent && (
