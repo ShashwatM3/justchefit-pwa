@@ -4,46 +4,28 @@ import {
   getAuth, 
   onAuthStateChanged,
   setPersistence,
-  browserLocalPersistence
+  browserLocalPersistence,
+  signInWithPopup,
+  GoogleAuthProvider
 } from "firebase/auth";
-import { doc, getDoc } from 'firebase/firestore';
-import { Plus, Loader2 } from 'lucide-react';
-
-// You'll need to import these from your project
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { Plus, Loader2, LogIn } from 'lucide-react';
 import { app, db } from "@/lib/firebase";
-// import { useCounterStore } from './store'
+import { useRouter } from 'next/navigation';
+import SharedContent from "./components/SharedContent";
 
-// Mock SharedContent component - replace with your actual import
-function SharedContent({ title, text, url }: { title: string; text: string; url: string }) {
-  return (
-    <div className="w-full max-w-3xl mx-auto mb-8 p-6 bg-gray-50 dark:bg-gray-900 rounded-lg">
-      {title && (
-        <h2 className="text-xl font-semibold mb-2 text-gray-900 dark:text-gray-100">
-          {title}
-        </h2>
-      )}
-      {text && (
-        <p className="text-gray-700 dark:text-gray-300 mb-2">
-          {text}
-        </p>
-      )}
-      {url && (
-        <a 
-          href={url} 
-          target="_blank" 
-          rel="noopener noreferrer"
-          className="text-blue-600 dark:text-blue-400 hover:underline break-all"
-        >
-          {url}
-        </a>
-      )}
-    </div>
-  );
+interface SearchParams {
+  title?: string;
+  text?: string;
+  url?: string;
 }
 
-function SharedContentWrapper({ searchParamsPromise }: { searchParamsPromise: any }) {
-  // Unwrap the Promise using React.use()
-  const searchParams: any = use(searchParamsPromise);
+interface PageProps {
+  searchParams: Promise<SearchParams>;
+}
+
+function SharedContentWrapper({ searchParamsPromise }: { searchParamsPromise: Promise<SearchParams> }) {
+  const searchParams = use(searchParamsPromise);
   
   return (
     <SharedContent
@@ -54,48 +36,62 @@ function SharedContentWrapper({ searchParamsPromise }: { searchParamsPromise: an
   );
 }
 
-export default function Home({ searchParams }: { searchParams: any }) {
-  const [userInfo, setUserInfo] = useState(null);
+function AddRecipeButton({ searchParamsPromise }: { searchParamsPromise: Promise<SearchParams> }) {
+  const searchParams = use(searchParamsPromise);
+  const router = useRouter();
+  const handleAddRecipe = (searchParams: SearchParams) => {
+    router.push(`/Dashboard?title=${searchParams?.title}&text=${searchParams?.text}&url=${searchParams?.url}`);
+  };
+  return (
+    searchParams && Object.keys(searchParams).length > 0 ? (
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => handleAddRecipe(searchParams)}
+          className="flex items-center gap-2 px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition-colors shadow-md hover:shadow-lg"
+        >
+          <Plus className="w-5 h-5" />
+          Add Recipe
+        </button>
+      </div>
+    ) : (
+      <div className="flex items-center gap-2 text-gray-500">
+        <span>No shared content</span>
+      </div>
+    )
+  )
+}
+
+export default function Home({ searchParams }: PageProps) {
+  const auth = getAuth(app);
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [authInitialized, setAuthInitialized] = useState(false);
+  const [userInfo, setUserInfo] = useState({})
+  const [signingIn, setSigningIn] = useState(false);
 
-  // Initialize Firebase Auth
+  // Listen for auth state changes
   useEffect(() => {
-    // In your actual implementation, uncomment these lines:
-    // const auth = getAuth(app);
-    
-    // Mock auth for demonstration - remove this in production
-    const mockAuth = {
-      currentUser: null,
-      onAuthStateChanged: (callback: any) => {
-        // Simulate checking auth state
-        setTimeout(() => {
-          callback(null); // No user logged in
-        }, 1000);
-        return () => {}; // Unsubscribe function
-      }
-    };
-
     setLoading(true);
-    
-    // Replace mockAuth with 'auth' in production
-    const unsubscribe = mockAuth.onAuthStateChanged(async (user: any) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         try {
-          // Fetch user details from Firestore
-          // Uncomment in production:
-          // const userRef = doc(db, "users", user.uid);
-          // const userSnap = await getDoc(userRef);
-          
-          // Mock user data - remove in production
-          const mockUserData: any = {
-            name: user.displayName,
-            email: user.email,
-            profile_pic: user.photoURL,
-            uid: user.uid,
-          };
-          
-          setUserInfo(mockUserData);
+          // Fetch extra profile details from Firestore
+          const userRef = doc(db, "users", user.uid);
+          const userSnap = await getDoc(userRef);
+
+          if (userSnap.exists()) {
+            setUserInfo(userSnap.data());
+          } else {
+            // If user doc doesn't exist yet, create it
+            const newUser = {
+              name: user.displayName,
+              email: user.email,
+              profile_pic: user.photoURL,
+              uid: user.uid,
+            };
+            await setDoc(userRef, newUser, { merge: true });
+            setUserInfo(newUser);
+          }
         } catch (error) {
           console.error("Error fetching user data:", error);
           setUserInfo(null);
@@ -108,13 +104,29 @@ export default function Home({ searchParams }: { searchParams: any }) {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [auth, setUserInfo]);
+
+  // Sign in with Google handler
+  const handleSignIn = async () => {
+    setSigningIn(true);
+    try {
+      await setPersistence(auth, browserLocalPersistence);
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+      
+      // User details will sync via onAuthStateChanged
+      console.log("Sign-in successful:", user);
+    } catch (error) {
+      console.error("Sign-in error:", error);
+      alert("Failed to sign in. Please try again.");
+    } finally {
+      setSigningIn(false);
+    }
+  };
 
   const handleAddRecipe = () => {
-    // Navigate to dashboard or recipe creation
-    // In production: router.push("/Dashboard")
-    console.log("Navigating to dashboard...");
-    alert("Add Recipe clicked! Redirect to dashboard.");
+    router.push("/Dashboard");
   };
 
   return (
@@ -130,7 +142,7 @@ export default function Home({ searchParams }: { searchParams: any }) {
           <SharedContentWrapper searchParamsPromise={searchParams} />
         </Suspense>
 
-        {/* Add Recipe Button - Only shown when user is authenticated */}
+        {/* Authentication Section */}
         {authInitialized && (
           <div className="w-full mb-8 flex justify-center">
             {loading ? (
@@ -139,17 +151,25 @@ export default function Home({ searchParams }: { searchParams: any }) {
                 <span>Checking authentication...</span>
               </div>
             ) : userInfo ? (
-              <button
-                onClick={handleAddRecipe}
-                className="flex items-center gap-2 px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition-colors shadow-md hover:shadow-lg"
-              >
-                <Plus className="w-5 h-5" />
-                Add Recipe
-              </button>
+              <AddRecipeButton searchParamsPromise={searchParams} />
             ) : (
-              <div className="text-sm text-gray-500 dark:text-gray-400">
-                Sign in to add recipes
-              </div>
+              <button
+                onClick={handleSignIn}
+                disabled={signingIn}
+                className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold rounded-lg transition-colors shadow-md hover:shadow-lg disabled:cursor-not-allowed"
+              >
+                {signingIn ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Signing in...
+                  </>
+                ) : (
+                  <>
+                    <LogIn className="w-5 h-5" />
+                    Sign in with Google
+                  </>
+                )}
+              </button>
             )}
           </div>
         )}
