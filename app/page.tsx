@@ -66,7 +66,7 @@ export default function Home({ searchParams }: PageProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [authInitialized, setAuthInitialized] = useState(false);
-  const [userInfo, setUserInfo] = useState({})
+  const [userInfo, setUserInfo] = useState<{} | null>(null);
   const [signingIn, setSigningIn] = useState(false);
 
   // Listen for auth state changes
