@@ -17,60 +17,6 @@ import { app, db } from "@/lib/firebase";
 import { useRouter, useSearchParams } from 'next/navigation';
 import SharedContent from "./components/SharedContent";
 
-interface UserInfo {
-  name: string | null;
-  email: string | null;
-  profile_pic: string | null;
-  uid: string;
-}
-
-function AddRecipeButton() {
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  
-  const title = searchParams.get('title') || '';
-  const text = searchParams.get('text') || '';
-  const url = searchParams.get('url') || '';
-  
-  const handleAddRecipe = () => {
-    const params = new URLSearchParams();
-    if (title) params.set('title', title);
-    if (text) params.set('text', text);
-    if (url) params.set('url', url);
-    router.push(`/Dashboard?${params.toString()}`);
-  };
-
-  const hasSharedContent = title || text || url;
-  
-  return hasSharedContent ? (
-    <div className="flex items-center gap-2">
-      <button
-        onClick={handleAddRecipe}
-        className="flex items-center gap-2 px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition-colors shadow-md hover:shadow-lg"
-      >
-        <Plus className="w-5 h-5" />
-        Add Recipe
-      </button>
-    </div>
-  ) : (
-    <div className="flex items-center gap-2 text-gray-500">
-      <span>No shared content</span>
-    </div>
-  );
-}
-
-function SharedContentWrapper() {
-  const searchParams = useSearchParams();
-  
-  return (
-    <SharedContent
-      title={searchParams.get('title') || undefined}
-      text={searchParams.get('text') || undefined}
-      url={searchParams.get('url') || undefined}
-    />
-  );
-}
-
 function HomeContent() {
   const auth = getAuth(app);
   const router = useRouter();
@@ -81,6 +27,154 @@ function HomeContent() {
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [signingIn, setSigningIn] = useState(false);
   const [autoSignInAttempted, setAutoSignInAttempted] = useState(false);
+
+  interface UserInfo {
+    name: string | null;
+    email: string | null;
+    profile_pic: string | null;
+    uid: string;
+  }
+  
+  function AddRecipeButton() {
+    const searchParams = useSearchParams();
+    const router = useRouter();
+    
+    const title = searchParams.get('title') || '';
+    const text = searchParams.get('text') || '';
+    const url = searchParams.get('url') || '';
+  
+    function getRandomGradient() {
+      // Helper to generate a random color avoiding black/white extremes
+      function randomColor() {
+        const r = Math.floor(Math.random() * 200) + 30; // 30-229
+        const g = Math.floor(Math.random() * 200) + 30;
+        const b = Math.floor(Math.random() * 200) + 30;
+        return `rgb(${r},${g},${b})`;
+      }
+    
+      // Random angle for gradient
+      const angle = Math.floor(Math.random() * 360);
+    
+      // Pick 2-3 colors for the gradient
+      const colors = [randomColor(), randomColor()];
+      if (Math.random() > 0.5) colors.push(randomColor());
+    
+      // Construct gradient string
+      return `linear-gradient(${angle}deg, ${colors.join(', ')})`;
+    }
+  
+    function encodeDate(date: Date) {
+      return Buffer.from(date.toISOString()).toString("base64");
+    }
+  
+    async function saveCreateRecipe(recipe_object: any) {
+      console.log("Loading us STARTING");
+      if (userInfo) {
+        const dt = new Date()
+        const recipeID = encodeDate(dt);
+        try {
+          await setDoc(doc(db, "users", userInfo.uid, "recipes", recipeID), {
+            name: recipe_object.recipe_name,
+            date_created: dt,
+            chef: {
+              "name": "Standard",
+              "voiceAssistant": "DHeSUVQvhhYeIxNUbtj3",
+              "voiceChef": "tWGXkYJGea4wMBN4mLD1"
+            },
+            prep_type: "As suggested by recipe",
+            complexity: "As suggested by the recipe extracted",
+            step: "ONBOARD",
+            gradient: getRandomGradient(),
+            initial_recipe: recipe_object.initial_recipe,
+            additional_info: "None"
+          });
+          alert("Your recipe has been added successfully!");
+          window.open("https://justchefit.vercel.app/")
+        } catch(err) {
+          console.log("Loading ENDED");
+          console.log("Error: ", err)
+        }
+      }
+    }
+  
+    async function extractAnyGetRecipe(url_provided: any) {
+      console.log("loading...")
+      if (!(url_provided)) {
+        alert("No URL Provided");
+        return;
+      }
+      try {
+        const res = await fetch("/api/fetch-transcript-insta", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            url: url_provided
+          }),
+        });
+      
+        const data = await res.json();
+        
+        if (!res.ok || data.error) {
+          if (data.error) {
+            console.log("Loading ENDED");
+            console.log("We weren't able to process your recipe. Try again later!")
+          }
+          console.error(data.error || "Failed to fetch transcript");
+          console.error("API Error:", data.error);
+        } else {
+          const recipe = data.recipe_object
+          console.log("Loading ENDED");
+          saveCreateRecipe(data.recipe_object);
+        }
+      } catch (err) {
+        console.error("Failed to send request. Please try again.");
+        console.error("Error sending POST request:", err);
+      } finally {
+        console.log("Loading ENDED");
+      }
+    }
+    
+    const handleAddRecipe = () => {
+      const params = new URLSearchParams();
+      if (title) params.set('title', title);
+      if (text) params.set('text', text);
+      if (url) params.set('url', url);
+      extractAnyGetRecipe(text.startsWith("http") ? text : url.startsWith("http") ? url : null)
+    };
+  
+    // const hasSharedContent = title || text || url;
+    const hasSharedContent = "hello";
+    
+    return hasSharedContent ? (
+      <div className="flex items-center gap-2">
+        <button
+          onClick={handleAddRecipe}
+          className="flex items-center gap-2 px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition-colors shadow-md hover:shadow-lg"
+        >
+          <Plus className="w-5 h-5" />
+          Add Recipe
+        </button>
+      </div>
+    ) : (
+      <div className="flex items-center gap-2 text-gray-500">
+        <span>No shared content</span>
+      </div>
+    );
+  }
+  
+  function SharedContentWrapper() {
+    const searchParams = useSearchParams();
+    
+    return (
+      <SharedContent
+        title={searchParams.get('title') || undefined}
+        text={searchParams.get('text') || undefined}
+        url={searchParams.get('url') || undefined}
+      />
+    );
+  }
 
   // Check if there's shared content
   const hasSharedContent = Boolean(
